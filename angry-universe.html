@@ -47,93 +47,136 @@
 
 		<script>
 
-			var radius = 63,
-			tilt = 0.41,
-			rotationSpeed = 0.1,
+			// game setup
+			
+			var g_levelSetups = {
+				1: {
+					"celestialBodies": {
+						"earth" : {name: "Earth", radius: 63, rotationSpeed: 0.5, orbitAround: "Sun", orbitRadius: 1000, orbitSpeed: 0.1, angle: 0, tilt: 0.41}, 
+						"earthMoon" : {name: "EarthMoon", radius: 254, rotationSpeed: -Math.PI / 4, orbitAround: "earth", orbitRadius: 200, orbitSpeed: 1, angle: 0, tilt: 0}
+					}
+				}
+			}
+			
+			
+			// objects
 
-			cloudsScale = 1.005,
-			moonScale = 0.40, // original scale = 0.23
-
-			height = window.innerHeight,
-			width  = window.innerWidth,
-
-			container, stats,
-
-			camera, controls, scene, renderer,
-			geometry, meshPlanet, meshClouds, meshMoon,
-			comet,
-			dirLight, dirLight2, sunLight,
-
-			time = new Date().getTime();
-
-			var celestialBodies = {
-						"earth" : {name: "Earth", radius: 63, rotationSpeed: 0.5, orbitAround: "Sun", orbitRadius: 1000, orbitSpeed: 0.1, angle: 0}, 
-						"earthMoon" : {name: "EarthMoon", radius: 254, rotationSpeed: -Math.PI / 4, orbitAround: "earth", orbitRadius: 200, orbitSpeed: 1, angle: 0}
+			function CelestialBody() {
+				// orbits around other celestial bodies, is *not* affected by physics
+			}
+			
+			function RigidBody() {
+				// is affected by physics
+			}
+		
+			function Level(levelNumber) {
+				
+				this.levelNumber = levelNumber;
+				this.levelSetup = g_levelSetups[this.levelNumber];
+				
+				// current level objects
+				var celestialBodies = {};
+				var rigidBodies = {};
+			}
+		
+			function Match() {
+				// a series of levels that make one game "match" - the sum of score gets the high score
+				this.score = 0;
+				this.startNewLevel(1);
 			};
 			
-			var originVector = new THREE.Vector3(0, 0, 0);
-
-			window.onload = function() {
-
-				if ( !Detector.webgl ) {
-
-					Detector.addGetWebGLMessage();
-					return;
-
+			Match.prototype.startNewLevel = function(levelNumber) {
+				if (levelNumber !== undefined) {
+					this.currentLevel = levelNumber;
+				} else {
+					this.currentLevel += 1;
 				}
-
-				init();
-				animate();
-
+				
+				this.level = new Level(this.currentLevel);
 			}
+		
+			function Game() {
+				// the main object - can only have one instance
+				
+				var radius = 63,
+				tilt = 0.41,
+				rotationSpeed = 0.1,
 
-			function init() {
+				cloudsScale = 1.005,
+				moonScale = 0.40, // original scale = 0.23
 
-				container = document.createElement( 'div' );
+				height = window.innerHeight,
+				width  = window.innerWidth,
+
+				container, stats,
+
+				camera, controls, scene, 
+				geometry, meshPlanet, meshClouds, meshMoon,
+				comet,
+				dirLight, dirLight2, sunLight;
+
+
+				var originVector = new THREE.Vector3(0, 0, 0);
+				
+				height = window.innerHeight;
+				width  = window.innerWidth;
+				
+				time = new Date().getTime();
+				
+				// globals
+				this.playerName = "John Universe";
+				this.highScore = {};
+				
+				// current match
+				this.match = new Match();
+				
+				// webgl, lighting, etc.
+				
+				var container = document.createElement( 'div' );
 				document.body.appendChild( container );
 
-				scene = new THREE.Scene();
+				this.scene = new THREE.Scene();
 
-				renderer = new THREE.WebGLRenderer( { clearAlpha: 1, clearColor: 0x000000 } );
-				renderer.setSize( width, height );
-				renderer.sortObjects = false;
-				renderer.autoClear = false;
+				this.renderer = new THREE.WebGLRenderer( { clearAlpha: 1, clearColor: 0x000000 } );
+				this.renderer.setSize( width, height );
+				this.renderer.sortObjects = false;
+				this.renderer.autoClear = false;
 
-				container.appendChild( renderer.domElement );
+				container.appendChild( this.renderer.domElement );
 
-				camera = new THREE.PerspectiveCamera( 25, width / height, 50, 1e7 );
-				camera.position.y = radius * 50;
-				camera.position.x = - radius * 50;
-				camera.lookAt(new THREE.Vertex(0,0,0));
+				this.camera = new THREE.PerspectiveCamera( 25, width / height, 50, 1e7 );
+				this.camera.position.y = 63 * 50;
+				this.camera.position.x = - 63 * 50;
+				this.camera.lookAt(new THREE.Vertex(0,0,0));
 
-				controls = new THREE.TrackballControls( camera, renderer.domElement );
+				this.controls = new THREE.TrackballControls( this.camera, this.renderer.domElement );
 
-				controls.rotateSpeed = 1.0;
-				controls.zoomSpeed = 1.2;
-				controls.panSpeed = 0.2;
+				this.controls.rotateSpeed = 1.0;
+				this.controls.zoomSpeed = 1.2;
+				this.controls.panSpeed = 0.2;
 
-				controls.noZoom = false;
-				controls.noPan = true;
+				this.controls.noZoom = false;
+				this.controls.noPan = true;
 
-				controls.staticMoving = false;
-				controls.dynamicDampingFactor = 0.3;
+				this.controls.staticMoving = false;
+				this.controls.dynamicDampingFactor = 0.3;
 
-				controls.minDistance = radius * 1.1;
-				controls.maxDistance = radius * 200;
+				this.controls.minDistance = 63 * 1.1;
+				this.controls.maxDistance = 63 * 200;
 
-				controls.keys = [ 65, 83, 68 ]; // [ rotateKey, zoomKey, panKey ]
+				this.controls.keys = [ 65, 83, 68 ]; // [ rotateKey, zoomKey, panKey ]
 
 				dirLight = new THREE.DirectionalLight( 0xFFFFFF );
 				dirLight.position.set( -1, 0, 1 ).normalize();
-				scene.add( dirLight );
+				this.scene.add( dirLight );
 				
 				dirLight2 = new THREE.DirectionalLight( 0x999999 );
 				dirLight2.position.set( 1, 1, -1 ).normalize();
-				scene.add( dirLight2 );
+				this.scene.add( dirLight2 );
 				
 				sunLight = new THREE.PointLight( 0xFFEFC0, 2, 0 );
-				scene.add( sunLight );
-
+				this.scene.add( sunLight );
+				
 				var planetTexture = THREE.ImageUtils.loadTexture( "textures/planets/earth_atmos_2048.jpg" ),
 				cloudsTexture     = THREE.ImageUtils.loadTexture( "textures/planets/earth_clouds_1024.png" ),
 				normalTexture     = THREE.ImageUtils.loadTexture( "textures/planets/earth_normal_2048.jpg" ),
@@ -165,13 +208,171 @@
 					uniforms: uniforms,
 					lights: true
 				});
-
+				
 				// plane
 				
-				plane = new THREE.Mesh( new THREE.PlaneGeometry( radius * 200, radius * 200, 8, 8 ), new THREE.MeshBasicMaterial( { color: 0x999999, opacity: 0.25, transparent: true, wireframe: true } ) );
+				plane = new THREE.Mesh( new THREE.PlaneGeometry( 63 * 200, 63 * 200, 8, 8 ), new THREE.MeshBasicMaterial( { color: 0x999999, opacity: 0.25, transparent: true, wireframe: true } ) );
 				plane.visible = true;
 				plane.rotation.x = 3 * Math.PI / 2;
-				scene.add( plane );
+				this.scene.add( plane );
+				
+				// stars
+
+				var i,
+				vector,
+				starsGeometry = new THREE.Geometry();
+
+				for ( i = 0; i < 1500; i++ ) {
+
+					vector = new THREE.Vector3( Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1 );
+					vector.multiplyScalar( 63 );
+
+					starsGeometry.vertices.push( new THREE.Vertex( vector ) );
+
+				}
+
+				var stars,
+				starsMaterials = [
+					new THREE.ParticleBasicMaterial( { color: 0x555555, size: 1, sizeAttenuation: false } ),
+					new THREE.ParticleBasicMaterial( { color: 0x555555, size: 0.5, sizeAttenuation: false } ),
+					new THREE.ParticleBasicMaterial( { color: 0x333333, size: 1, sizeAttenuation: false } ),
+					new THREE.ParticleBasicMaterial( { color: 0x3a3a3a, size: 0.5, sizeAttenuation: false } ),
+					new THREE.ParticleBasicMaterial( { color: 0x1a1a1a, size: 1, sizeAttenuation: false } ),
+					new THREE.ParticleBasicMaterial( { color: 0x1a1a1a, size: 0.5, sizeAttenuation: false } )
+				];
+
+				for ( i = 10; i < 30; i++ ) {
+
+					stars = new THREE.ParticleSystem( starsGeometry, starsMaterials[ i % 6 ] );
+
+					stars.rotation.x = Math.random() * 6;
+					stars.rotation.y = Math.random() * 6;
+					stars.rotation.z = Math.random() * 6;
+
+					var s = i * 10;
+					stars.scale.set( s, s, s );
+
+					stars.matrixAutoUpdate = false;
+					stars.updateMatrix();
+
+					this.scene.add( stars );
+
+				}
+				
+				this.stats = new Stats();
+				this.stats.domElement.style.position = 'absolute';
+				this.stats.domElement.style.top = '0px';
+				this.stats.domElement.style.zIndex = 100;
+				container.appendChild( this.stats.domElement );
+
+				window.addEventListener( 'resize', this.onWindowResize, false );
+				
+				// run main loop
+				this.animate();
+				
+				// TODO: show menu first, start match after user clicks on "New Game"
+				this.match = new Match();
+			};
+
+			Game.prototype.onWindowResize = function( event ) {
+				this.width = window.innerWidth;
+				this.height = window.innerHeight;
+
+				this.renderer.setSize( width, height );
+
+				this.camera.aspect = width / height;
+				this.camera.updateProjectionMatrix();
+
+				this.controls.screen.width = width;
+				this.controls.screen.height = height;
+
+				this.camera.radius = ( width + height ) / 4;
+			};
+			
+			Game.prototype.animate = function() {
+				
+				// register hook for next animation frame
+				obj = this;
+				requestAnimationFrame( function(){obj.animate()} );
+
+				// celestial bodies update
+				var t = new Date().getTime(),
+				dt = Math.min(( t - time ) / 1000, 0.033); // min 30 fps
+				time = t;
+
+				/*
+				for (currentBodyKey in celestialBodies) {
+					current = celestialBodies[currentBodyKey];
+					
+					current.mesh.rotation.y += current.rotationSpeed * dt;
+					
+					var orbitX = 0, orbitZ = 0;
+					if (current.orbitAround != "Sun") {
+						orbitX = celestialBodies[current.orbitAround].mesh.position.x;
+						orbitZ = celestialBodies[current.orbitAround].mesh.position.z;
+					}
+					
+					current.angle += dt * current.orbitSpeed;
+					
+					current.mesh.position = new THREE.Vector3(
+						Math.cos( current.angle ) * current.orbitRadius + orbitX,
+						0,
+						Math.sin( current.angle ) * current.orbitRadius + orbitZ
+					);
+				}
+
+
+				// comet animation
+				for (var p = 0; p < comet.particleCount; p++) {
+					var particle = comet.particles.vertices[p];
+					if (particle.position.z < - Math.random() * comet.tailLength * 4) {
+						particle.position.set( 	Math.cos(particle.angle),
+												Math.sin(particle.angle),
+												- Math.random() * comet.tailLength / 10
+												);
+					}
+					particle.position.addSelf( new THREE.Vector3(
+													5 * Math.cos(particle.angle)/ (particle.position.z - 1),
+													5 * Math.sin(particle.angle)/ (particle.position.z - 1),
+													- Math.abs(particle.position.z)/50 - 1
+													) );
+				}
+				comet.particleSystem.geometry.__dirtyVertices = true;
+				*/
+				
+				
+				this.render();
+				this.stats.update();
+				
+			}
+			
+			Game.prototype.render = function() {
+				
+				this.controls.update();
+
+				this.renderer.clear();
+				this.renderer.render( this.scene, this.camera );
+			}
+
+
+			// start onload
+			window.onload = function() {
+				if ( !Detector.webgl ) {
+					Detector.addGetWebGLMessage();
+					return;
+				}
+				var g_game = new Game();
+			}
+
+
+
+
+
+
+			function init() {
+		
+
+				/*
 
 				// planet
 
@@ -205,10 +406,10 @@
 				scene.add( meshMoon );
 
 				celestialBodies["earthMoon"].mesh = meshMoon;
-
+				*/
 
 				// comet
-				
+				/*
 				comet = {};
 				comet.tailLength = 500;
 				comet.particleCount = 200;
@@ -253,78 +454,16 @@
 				comet.particleSystem.lookAt(originVector);
 				// add it to the scene
 				scene.add(comet.particleSystem);
+				*/
 
+				
 
-				// stars
-
-				var i,
-				vector,
-				starsGeometry = new THREE.Geometry();
-
-				for ( i = 0; i < 1500; i++ ) {
-
-					vector = new THREE.Vector3( Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1 );
-					vector.multiplyScalar( radius );
-
-					starsGeometry.vertices.push( new THREE.Vertex( vector ) );
-
-				}
-
-				var stars,
-				starsMaterials = [
-					new THREE.ParticleBasicMaterial( { color: 0x555555, size: 1, sizeAttenuation: false } ),
-					new THREE.ParticleBasicMaterial( { color: 0x555555, size: 0.5, sizeAttenuation: false } ),
-					new THREE.ParticleBasicMaterial( { color: 0x333333, size: 1, sizeAttenuation: false } ),
-					new THREE.ParticleBasicMaterial( { color: 0x3a3a3a, size: 0.5, sizeAttenuation: false } ),
-					new THREE.ParticleBasicMaterial( { color: 0x1a1a1a, size: 1, sizeAttenuation: false } ),
-					new THREE.ParticleBasicMaterial( { color: 0x1a1a1a, size: 0.5, sizeAttenuation: false } )
-				];
-
-				for ( i = 10; i < 30; i++ ) {
-
-					stars = new THREE.ParticleSystem( starsGeometry, starsMaterials[ i % 6 ] );
-
-					stars.rotation.x = Math.random() * 6;
-					stars.rotation.y = Math.random() * 6;
-					stars.rotation.z = Math.random() * 6;
-
-					var s = i * 10;
-					stars.scale.set( s, s, s );
-
-					stars.matrixAutoUpdate = false;
-					stars.updateMatrix();
-
-					scene.add( stars );
-
-				}
-
-				stats = new Stats();
-				stats.domElement.style.position = 'absolute';
-				stats.domElement.style.top = '0px';
-				stats.domElement.style.zIndex = 100;
-				container.appendChild( stats.domElement );
-
-				window.addEventListener( 'resize', onWindowResize, false );
+				
 
 			};
 
-			function onWindowResize( event ) {
 
-				width = window.innerWidth;
-				height = window.innerHeight;
-
-				renderer.setSize( width, height );
-
-				camera.aspect = width / height;
-				camera.updateProjectionMatrix();
-
-				controls.screen.width = width;
-				controls.screen.height = height;
-
-				camera.radius = ( width + height ) / 4;
-
-			};
-
+			/*
 			function animate() {
 
 				requestAnimationFrame( animate );
@@ -386,7 +525,7 @@
 				renderer.clear();
 				renderer.render( scene, camera );
 
-			};
+			};*/
 
 		</script>
 	</body>
