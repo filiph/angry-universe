@@ -68,24 +68,24 @@
 						"sun" : {
 							name: "Sun", radius: 100, rotationSpeed: 0, 
 							primitive: "Sphere", material: "MeshDepthMaterial",
-							mass: 1.9891e+15 //30
+							mass: 1.9891e+3 //30
 							},
 						"earth" : { 
 							name: "Earth", radius: 63, rotationSpeed: 0.5, orbitAround: "Sun", orbitRadius: 1000, orbitSpeed: 0.1, angle: 0, tilt: 0.41,
 							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "textures/planets/earth_atmos_2048.jpg",
-							mass: 5.9736e+13 //24
+							mass: 5.9736e+2 //24
 							}, 
 						"earthMoon" : {
 							name: "EarthMoon", radius: 25, rotationSpeed: -Math.PI / 4, orbitAround: "Earth", orbitRadius: 200, orbitSpeed: 1, angle: 0, tilt: 0,
 							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "textures/planets/moon_1024.jpg",
-							mass: 7.349e+12 //22
+							mass: 7.349e+1 //22
 							}
 					},
 					"rigidBodies" : {
 						"comet" : {
 							name: "Comet", radius: 5, x: 0, z: 1000, vx: 2, vz: 0,
 							primitive: "Sphere", material: "MeshDepthMaterial",
-							mass: 1e+5
+							mass: 1e+1
 						}
 					}
 				}
@@ -93,8 +93,9 @@
 			
 			var g_physics = {
 				gravitationalConstant: 6.67384e-11,
-				distanceBulgarianConstant: 1e+9,
-				maxForceInOneStep: 100000
+				distanceBulgarianConstant: 1e-13,
+				maxForceInOneStep: 0.08,
+				minDt: 0.001
 			}
 			
 			
@@ -273,39 +274,29 @@
 			RigidBody.prototype.updatePosition = function(dt) {
 				this.acceleration.set(0,0,0);
 				
-				var forcesInBounds = true; 
-				
 				for (key in this.p_allBodies) {
 					if (this !== this.p_allBodies[key]) {
-						var new_acceleration = this.getGravitationalAcceleration(this.p_allBodies[key]);
-						if (true/*Math.abs(new_acceleration.x * dt) < g_physics.maxForceInOneStep && Math.abs(new_acceleration.z * dt) < g_physics.maxForceInOneStep*/) { // valid acceleration
-							this.acceleration.addSelf(new_acceleration);
-						} else { // too strong forces, we need to break this out
-							console.log("Too big forces! ->" + Math.abs(new_acceleration.x * dt));
-							forcesInBounds = false;
-							break;
-						}
-						
+						this.acceleration.addSelf(this.getGravitationalAcceleration(this.p_allBodies[key]));
 					}
 				}
 				
-				if (false/*!forcesInBounds*/) {
+				if (this.acceleration.length() * dt > g_physics.maxForceInOneStep && dt > g_physics.minDt) {
 					// we're dealing with too strong forces per computation, need to have smaller steps
-					var granularity = 100;
+					var granularity = 2;
 					var granular_dt = dt / granularity;
-					console.log("Previous dt = " + dt + " | Granular dt = " + granular_dt);
+					//console.log("Previous dt = " + dt + " | Granular dt = " + granular_dt);
 					
 					for (var i = 0; i < granularity; i++) {
 						this.updatePosition(granular_dt);
 					}
 				} else {
 					var starting_velocity = this.velocity.clone();
+					
 					// a = dv/dt --> v = u + a*dt
 					this.velocity.addSelf(this.acceleration.multiplyScalar(dt));
-					console.log("Acceleration = " + this.acceleration.length() + "| Velocity = " + this.velocity.length());
 
 					// dx = (u+v)/2 * dt
-					this.position.addSelf(this.velocity.addSelf(starting_velocity).multiplyScalar(Math.pow((dt*60),2)/2));
+					this.position.addSelf(starting_velocity.addSelf(this.velocity).multiplyScalar(Math.pow(dt*60,2)/2));
 
 					this.webglObject.mesh.position = this.position;
 				}				
@@ -545,7 +536,7 @@
 
 				// celestial bodies update
 				var t = new Date().getTime(),
-				dt = Math.min(( t - time ) / 1000, 0.033); // min 30 fps
+				dt = Math.min(( t - time ) / 1000, 0.016); // min 60 fps
 				time = t;
 
 				if (this.match !== undefined && this.match.level !== null) {
