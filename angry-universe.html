@@ -60,22 +60,41 @@
 
 			// game setup
 			
+			// mass in kg, distance in thousands of km
+			
 			var g_levelSetups = {
 				1: {
 					"celestialBodies": {
+						"sun" : {
+							name: "Sun", radius: 100, rotationSpeed: 0, 
+							primitive: "Sphere", material: "MeshDepthMaterial",
+							mass: 1.9891e+15 //30
+							},
 						"earth" : { 
 							name: "Earth", radius: 63, rotationSpeed: 0.5, orbitAround: "Sun", orbitRadius: 1000, orbitSpeed: 0.1, angle: 0, tilt: 0.41,
-							primitive: "Sphere", texturePath: "textures/planets/earth_atmos_2048.jpg"
+							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "textures/planets/earth_atmos_2048.jpg",
+							mass: 5.9736e+13 //24
 							}, 
 						"earthMoon" : {
 							name: "EarthMoon", radius: 25, rotationSpeed: -Math.PI / 4, orbitAround: "Earth", orbitRadius: 200, orbitSpeed: 1, angle: 0, tilt: 0,
-							primitive: "Sphere", texturePath: "textures/planets/moon_1024.jpg"
+							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "textures/planets/moon_1024.jpg",
+							mass: 7.349e+12 //22
 							}
 					},
 					"rigidBodies" : {
-						// ---
+						"comet" : {
+							name: "Comet", radius: 5, x: 0, z: 1000, vx: 2, vz: 0,
+							primitive: "Sphere", material: "MeshDepthMaterial",
+							mass: 1e+5
+						}
 					}
 				}
+			}
+			
+			var g_physics = {
+				gravitationalConstant: 6.67384e-11,
+				distanceBulgarianConstant: 1e+9,
+				maxForceInOneStep: 100000
 			}
 			
 			
@@ -92,7 +111,16 @@
 						specularPath
 				*/
 				
-				if (("texturePath" in settings) && !("normalPath" in settings)) {
+				if (settings["material"] == "MeshDepthMaterial") {
+					var material = new THREE.MeshDepthMaterial();//new THREE.MeshNormalMaterial( { shading: THREE.SmoothShading } );
+
+					var geometry = new THREE.SphereGeometry( settings["radius"], 100, 50 );
+					geometry.computeTangents();
+
+					this.mesh = new THREE.Mesh( geometry, material );
+					g_game.scene.add( this.mesh );
+					
+				} else if (("texturePath" in settings) && !("normalPath" in settings)) {
 					var texture = THREE.ImageUtils.loadTexture( settings["texturePath"] );
 					var material = new THREE.MeshPhongMaterial( { color: 0xffffff, map: texture } );
 					
@@ -166,47 +194,121 @@
 
 				this.name = settings["name"];
 				
-				this.orbitAround = null;
+				this.mass = settings["mass"];
+				this.radius = settings["radius"];
+				
 				this.orbitSpeed = settings["orbitSpeed"];
 				this.orbitRadius = settings["orbitRadius"];
 				this.rotationSpeed = settings["rotationSpeed"];
-				this.angle = settings["angle"];
+				this.orbitAngle = settings["angle"];
 				
 				this.webglObject = new WebGLObject(settings);
 				
-				this.position = new THREE.Vector2();
+				this.position = new THREE.Vector3(0,0,0);
 				
 				this.updatePosition(0);
 			}
 			
 			CelestialBody.prototype.updatePosition = function(dt) {
-				var orbitX = 0, orbitY = 0;
+				
+				this.webglObject.mesh.rotation.y += this.rotationSpeed * dt;
+				
+				if ("orbitAround" in this) {
 
-				if (this.orbitAround !== null) {
-					orbitX = this.orbitAround.position.x;
-					orbitY = this.orbitAround.position.y;
+					var orbitX = this.orbitAround.position.x;
+					var orbitZ = this.orbitAround.position.z;
+
+					this.orbitAngle += dt * this.orbitSpeed;
+
+					this.position.x = Math.cos( this.orbitAngle ) * this.orbitRadius + orbitX;
+					this.position.z = Math.sin( this.orbitAngle ) * this.orbitRadius + orbitZ;
 				}
 				
-				this.webglObject.mesh.rotation.y += this.rotationSpeed * dt;	
-				
-				this.angle += dt * this.orbitSpeed;
-				
-				this.position.x = Math.cos( this.angle ) * this.orbitRadius + orbitX;
-				this.position.y = Math.sin( this.angle ) * this.orbitRadius + orbitY;
-				
-				this.updateMesh();
-			}
-			
-			CelestialBody.prototype.updateMesh = function() {
-				this.webglObject.mesh.position = new THREE.Vector3(
-					this.position.x,
-					0,
-					this.position.y
-				);
+				this.webglObject.mesh.position = this.position;
 			}
 			
 			function RigidBody(settings) {
 				// is affected by physics
+				this.settings = settings;
+
+				this.name = settings["name"];
+				
+				this.mass = settings["mass"];
+				this.radius = settings["radius"];
+				
+				this.alive = true;
+				
+				this.p_allBodies = null;
+				
+				if ('x' in settings && 'z' in settings) {
+					this.position = new THREE.Vector3(settings['x'], 0, settings['z']);
+				} else {
+					this.position = new THREE.Vector3(500, 0, 500);
+				}
+
+				if ('vx' in settings && 'vz' in settings) {
+					this.velocity = new THREE.Vector3(settings['vx'], 0, settings['vz']);
+				} else {
+					this.velocity = new THREE.Vector3(0, 0, 0);
+				}
+				this.acceleration = new THREE.Vector3(0, 0, 0);
+				
+				this.webglObject = new WebGLObject(settings);
+					
+				this.updatePosition(0);
+			}
+			
+			RigidBody.prototype.getGravitationalAcceleration = function(other) {
+				if (this.mass == 0 || other.mass == 0) {
+					return new THREE.Vector3(0, 0, 0)
+				}
+				var vectorToCurrent = other.position.clone().subSelf(this.position);
+				var r_squared = vectorToCurrent.lengthSq();
+				// var F = 6.67384e-11 * this.mass * other.mass / r_squared;
+				var a = g_physics.gravitationalConstant * other.mass / (r_squared * g_physics.distanceBulgarianConstant);
+				//console.log(a);
+				return vectorToCurrent.divideScalar(Math.sqrt(r_squared)).multiplyScalar(a); // normalize then multiply by force
+			}
+			
+			RigidBody.prototype.updatePosition = function(dt) {
+				this.acceleration.set(0,0,0);
+				
+				var forcesInBounds = true; 
+				
+				for (key in this.p_allBodies) {
+					if (this !== this.p_allBodies[key]) {
+						var new_acceleration = this.getGravitationalAcceleration(this.p_allBodies[key]);
+						if (true/*Math.abs(new_acceleration.x * dt) < g_physics.maxForceInOneStep && Math.abs(new_acceleration.z * dt) < g_physics.maxForceInOneStep*/) { // valid acceleration
+							this.acceleration.addSelf(new_acceleration);
+						} else { // too strong forces, we need to break this out
+							console.log("Too big forces! ->" + Math.abs(new_acceleration.x * dt));
+							forcesInBounds = false;
+							break;
+						}
+						
+					}
+				}
+				
+				if (false/*!forcesInBounds*/) {
+					// we're dealing with too strong forces per computation, need to have smaller steps
+					var granularity = 100;
+					var granular_dt = dt / granularity;
+					console.log("Previous dt = " + dt + " | Granular dt = " + granular_dt);
+					
+					for (var i = 0; i < granularity; i++) {
+						this.updatePosition(granular_dt);
+					}
+				} else {
+					var starting_velocity = this.velocity.clone();
+					// a = dv/dt --> v = u + a*dt
+					this.velocity.addSelf(this.acceleration.multiplyScalar(dt));
+					console.log("Acceleration = " + this.acceleration.length() + "| Velocity = " + this.velocity.length());
+
+					// dx = (u+v)/2 * dt
+					this.position.addSelf(this.velocity.addSelf(starting_velocity).multiplyScalar(Math.pow((dt*60),2)/2));
+
+					this.webglObject.mesh.position = this.position;
+				}				
 			}
 		
 			function Level(levelNumber) {
@@ -222,11 +324,9 @@
 					var newBody = new CelestialBody(bodySettings);
 					
 					if ("orbitAround" in bodySettings) {
-						if (bodySettings["orbitAround"] != "Sun") {
-							for (i in this.celestialBodies) {
-								if (this.celestialBodies[i].name == bodySettings["orbitAround"]) {
-									newBody.orbitAround = this.celestialBodies[i];
-								}
+						for (i in this.celestialBodies) {
+							if (this.celestialBodies[i].name == bodySettings["orbitAround"]) {
+								newBody.orbitAround = this.celestialBodies[i];
 							}
 						}
 					}
@@ -239,6 +339,22 @@
 				// current level objects
 				for (rigidBodyName in this.levelSetup["rigidBodies"]) {
 					this.rigidBodies.push(new RigidBody(this.levelSetup["rigidBodies"][rigidBodyName]));
+				}
+				
+				this.allBodies = this.rigidBodies.concat(this.celestialBodies);
+				
+				// give context to all rigidbodies
+				for (key in this.rigidBodies) {
+					this.rigidBodies[key].p_allBodies = this.allBodies;
+				}
+				
+				this.paused = false;
+			}
+			
+			Level.prototype.animate = function(dt) {
+				for (currentBodyKey in this.allBodies) {
+					var current = this.allBodies[currentBodyKey];
+					current.updatePosition(dt);
 				}
 			}
 		
@@ -340,10 +456,11 @@
 				
 				// plane
 				
-				plane = new THREE.Mesh( new THREE.PlaneGeometry( 63 * 200, 63 * 200, 8, 8 ), new THREE.MeshBasicMaterial( { color: 0x999999, opacity: 0.25, transparent: true, wireframe: true } ) );
-				plane.visible = true;
-				plane.rotation.x = 3 * Math.PI / 2;
-				this.scene.add( plane );
+				this.planeMesh = new THREE.Mesh( new THREE.PlaneGeometry( 63 * 200, 63 * 200, 8, 8 ), new THREE.MeshBasicMaterial( { color: 0x999999, opacity: 0.25, transparent: true, wireframe: true } ) );
+				this.planeMesh.visible = true;
+				this.planeMesh.rotation.x = 3 * Math.PI / 2;
+				this.scene.add( this.planeMesh );
+				
 				
 				// stars
 
@@ -393,8 +510,9 @@
 				this.stats.domElement.style.top = '0px';
 				this.stats.domElement.style.zIndex = 100;
 				container.appendChild( this.stats.domElement );
-
-				window.addEventListener( 'resize', this.onWindowResize, false );
+				
+				var obj = this;
+				window.addEventListener( 'resize', function(){obj.onWindowResize()}, false );
 				
 				// run main loop
 				this.animate();
@@ -408,15 +526,15 @@
 				this.width = window.innerWidth;
 				this.height = window.innerHeight;
 
-				this.renderer.setSize( width, height );
+				this.renderer.setSize( this.width, this.height );
 
-				this.camera.aspect = width / height;
+				this.camera.aspect = this.width / this.height;
 				this.camera.updateProjectionMatrix();
 
-				this.controls.screen.width = width;
-				this.controls.screen.height = height;
+				this.controls.screen.width = this.width;
+				this.controls.screen.height = this.height;
 
-				this.camera.radius = ( width + height ) / 4;
+				this.camera.radius = ( this.width + this.height ) / 4;
 			};
 			
 			Game.prototype.animate = function() {
@@ -431,10 +549,7 @@
 				time = t;
 
 				if (this.match !== undefined && this.match.level !== null) {
-					for (currentBodyKey in this.match.level.celestialBodies) {
-						var current = this.match.level.celestialBodies[currentBodyKey];
-						current.updatePosition(dt);
-					}
+					this.match.level.animate(dt);
 				}
 				
 				
