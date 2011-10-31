@@ -42,10 +42,16 @@
 
 		<div id="info">
 			<a href="http://github.com/mrdoob/three.js" target="_blank">three.js</a> - earth [trackball camera]<br/><br/>
-			<b>MOVE</b> mouse &amp; press <b>LEFT/A:</b> rotate, <b>MIDDLE/S:</b> zoom, <b>RIGHT/D:</b> pan
+			<span id="console">Nothing yet...</span>
 		</div>
 
 		<script>
+
+			// debug
+			g_console = {
+				dom : document.getElementById("console"),
+				log : function(msg) {this.dom.innerHTML = msg}
+			};
 
 			// start onload
 			g_game = null;
@@ -83,18 +89,21 @@
 					},
 					"rigidBodies" : {
 						"comet" : {
-							name: "Comet", radius: 5, x: 0, z: 1000, vx: 2, vz: 0,
+							name: "Comet", radius: 5, x: -500, z: -1000, vx: 200, vz: 0,
 							primitive: "Sphere", material: "MeshDepthMaterial",
-							mass: 1e+1
+							mass: 1e+1,
+							alive: false, playerControlled: true
 						}
 					}
 				}
 			}
 			
 			var g_physics = {
-				gravitationalConstant: 6.67384e-11,
-				distanceBulgarianConstant: 1e-13,
-				maxForceInOneStep: 0.08,
+				gravitationalConstant: 6.67384, //6.67384e-11,
+				distanceBulgarianConstant: 1e-4,
+				maxStartingForce: 1000,
+				minStartingForce: 200,
+				maxForceInOneStep: 20,//0.08,
 				minDt: 0.001
 			}
 			
@@ -237,7 +246,18 @@
 				this.mass = settings["mass"];
 				this.radius = settings["radius"];
 				
-				this.alive = true;
+				if ('alive' in settings) {
+					this.alive = settings['alive'];
+				} else {
+					this.alive = true;					
+				}
+
+				if ('playerControlled' in settings) {
+					this.playerControlled = settings['playerControlled'];
+				} else {
+					this.playerControlled = false;					
+				}
+
 				
 				this.p_allBodies = null;
 				
@@ -259,7 +279,7 @@
 				this.updatePosition(0);
 			}
 			
-			RigidBody.prototype.getGravitationalAcceleration = function(other) {
+			RigidBody.prototype.getGravitationalAccelerationTo = function(other) {
 				if (this.mass == 0 || other.mass == 0) {
 					return new THREE.Vector3(0, 0, 0)
 				}
@@ -275,8 +295,9 @@
 				this.acceleration.set(0,0,0);
 				
 				for (key in this.p_allBodies) {
-					if (this !== this.p_allBodies[key]) {
-						this.acceleration.addSelf(this.getGravitationalAcceleration(this.p_allBodies[key]));
+					var other = this.p_allBodies[key];
+					if (this !== other) {
+						this.acceleration.addSelf(this.getGravitationalAccelerationTo(other));
 					}
 				}
 				
@@ -284,7 +305,8 @@
 					// we're dealing with too strong forces per computation, need to have smaller steps
 					var granularity = 2;
 					var granular_dt = dt / granularity;
-					//console.log("Previous dt = " + dt + " | Granular dt = " + granular_dt);
+					console.log("Previous dt = " + dt + " | Granular dt = " + granular_dt);
+
 					
 					for (var i = 0; i < granularity; i++) {
 						this.updatePosition(granular_dt);
@@ -296,8 +318,12 @@
 					this.velocity.addSelf(this.acceleration.multiplyScalar(dt));
 
 					// dx = (u+v)/2 * dt
-					this.position.addSelf(starting_velocity.addSelf(this.velocity).multiplyScalar(Math.pow(dt*60,2)/2));
-
+					this.position.addSelf(starting_velocity.addSelf(this.velocity).multiplyScalar(dt/2));
+					//this.position.addSelf(this.velocity.multiplyScalar(dt));
+					
+					g_console.log("Acceleration: " + this.acceleration.x + " | " + this.acceleration.z + "<br>" +
+									"Velocity: " + this.velocity.x + " | " + this.velocity.z);
+					
 					this.webglObject.mesh.position = this.position;
 				}				
 			}
@@ -326,10 +352,15 @@
 				}
 				
 				this.rigidBodies = [];
+				this.playerControlledBody = null;
 				
 				// current level objects
 				for (rigidBodyName in this.levelSetup["rigidBodies"]) {
-					this.rigidBodies.push(new RigidBody(this.levelSetup["rigidBodies"][rigidBodyName]));
+					var newBody = new RigidBody(this.levelSetup["rigidBodies"][rigidBodyName]);
+					this.rigidBodies.push(newBody);
+					if (newBody.playerControlled) {
+						this.playerControlledBody = newBody;
+					}
 				}
 				
 				this.allBodies = this.rigidBodies.concat(this.celestialBodies);
@@ -339,13 +370,97 @@
 					this.rigidBodies[key].p_allBodies = this.allBodies;
 				}
 				
-				this.paused = false;
+				this.interactiveMode = true;
+				this.startingPoint = this.playerControlledBody.position;
+				this.startingAngle = - Math.PI / 4;
+				this.startingForce = 1.0;
+				this.arrow = new Arrow();
+				this.arrow.line.position = this.startingPoint;
+				
+				var obj = this;
+				window.addEventListener( 'keydown', function(e){obj.onKeyDown(e)}, false );
 			}
 			
+			function Arrow(playerControlledBody) {
+				this.vector = new THREE.Vector3(10, 0, 10);
+				this.geometry = new THREE.Geometry();
+				this.material = new THREE.LineBasicMaterial( { color: 0xffffff, opacity: 1, linewidth: 5 } );
+				var path = [[0,0], [300,0], [200,-50], [200,50], [300,0]];
+				
+				for (var i = 0; i < path.length; i++) {
+					var vec = new THREE.Vector3( path[i][0], 0, path[i][1]);
+					this.geometry.vertices.push( new THREE.Vertex(vec) );
+				}
+				
+				this.line = new THREE.Line(this.geometry, this.material, THREE.LineStrip);
+				// this.line.scale.x = this.line.scale.y = this.line.scale.z = 10;
+				// 				this.line.updateMatrix();
+				g_game.scene.add(this.line);
+			}
+			
+			Arrow.prototype.setRotation = function(angle) {
+				this.line.rotation.y = angle;
+			}
+			
+			Arrow.prototype.setForce = function(force) {
+				this.line.scale.x = force;
+			}
+			
+			Level.prototype.shoot = function() {
+				this.interactiveMode = false;
+
+				this.playerControlledBody.alive = true;
+				this.playerControlledBody.webglObject.mesh.rotation.y = this.arrow.line.rotation.y;
+				this.playerControlledBody.webglObject.mesh.visible = true;
+				
+				var trueStartingForce = g_physics.minStartingForce + (g_physics.maxStartingForce - g_physics.minStartingForce) * (this.startingForce - 0.5);
+				
+				this.playerControlledBody.velocity.x = Math.cos(this.startingAngle) * trueStartingForce;
+				this.playerControlledBody.velocity.z = - Math.sin(this.startingAngle) * trueStartingForce;
+
+				this.arrow.line.visible = false;
+			}
+			
+			Level.prototype.onKeyDown = function ( event ) {
+
+				switch( event.keyCode ) {
+
+					case 38: /*up*/
+					case 87: /*W*/ this.startingForce += 0.05; 
+						if (this.startingForce > 1.5) {this.startingForce = 1.5}
+					break;
+
+					case 40: /*down*/
+					case 83: /*S*/ this.startingForce -= 0.05; 
+						if (this.startingForce < 0.5) {this.startingForce = 0.5}
+					break;
+
+					case 37: /*left*/
+					case 65: /*A*/ this.startingAngle += 0.05; break;
+
+					case 39: /*right*/
+					case 68: /*D*/ this.startingAngle -= 0.05; break;
+					
+					case 32: /*space*/
+					case 70: /*F*/ this.shoot(); break;
+				}
+			};
+			
 			Level.prototype.animate = function(dt) {
-				for (currentBodyKey in this.allBodies) {
-					var current = this.allBodies[currentBodyKey];
-					current.updatePosition(dt);
+				for (currentKey in this.celestialBodies) {
+					this.celestialBodies[currentKey].updatePosition(dt);
+				}
+				
+				for (currentKey in this.rigidBodies) {
+					var current = this.rigidBodies[currentKey];
+					if (current.alive) {
+						current.updatePosition(dt);
+					}
+				}
+				
+				if (this.interactiveMode) {
+					this.arrow.setRotation(this.startingAngle);
+					this.arrow.setForce(this.startingForce);
 				}
 			}
 		
@@ -386,10 +501,16 @@
 				dirLight, dirLight2, sunLight;
 
 
-				var originVector = new THREE.Vector3(0, 0, 0);
+				this.originVector = new THREE.Vector3(0, 0, 0);
 				
 				height = window.innerHeight;
 				width  = window.innerWidth;
+				
+				this.windowHalfX = height / 2;
+				this.windowHalfY = height / 2;
+				
+				this.mouseX = 0;
+				this.mouseY = 0;
 				
 				time = new Date().getTime();
 				
@@ -412,26 +533,32 @@
 				container.appendChild( this.renderer.domElement );
 
 				this.camera = new THREE.PerspectiveCamera( 25, width / height, 50, 1e7 );
-				this.camera.position.y = 63 * 50;
-				this.camera.position.x = - 63 * 50;
-				this.camera.lookAt(new THREE.Vertex(0,0,0));
+				this.camera.position.y = 60 * 50;
+				this.camera.position.x = - 60 * 50;
+				this.camera.lookAt(new THREE.Vector3(0,0,0));
 
-				this.controls = new THREE.TrackballControls( this.camera, this.renderer.domElement );
+				this.controls = {
+									object : this.camera,
+									target : new THREE.Vector3(0,0,0),
+									update : function() {this.object.position.x -= 1; this.object.lookAt(this.target)}
+								};
 
-				this.controls.rotateSpeed = 1.0;
-				this.controls.zoomSpeed = 1.2;
-				this.controls.panSpeed = 0.2;
-
-				this.controls.noZoom = false;
-				this.controls.noPan = true;
-
-				this.controls.staticMoving = false;
-				this.controls.dynamicDampingFactor = 0.3;
-
-				this.controls.minDistance = 63 * 1.1;
-				this.controls.maxDistance = 63 * 200;
-
-				this.controls.keys = [ 65, 83, 68 ]; // [ rotateKey, zoomKey, panKey ]
+				// this.controls = new THREE.TrackballControls( this.camera, this.renderer.domElement );
+				// 
+				// this.controls.rotateSpeed = 1.0;
+				// this.controls.zoomSpeed = 1.2;
+				// this.controls.panSpeed = 0.2;
+				// 
+				// this.controls.noZoom = false;
+				// this.controls.noPan = true;
+				// 
+				// this.controls.staticMoving = false;
+				// this.controls.dynamicDampingFactor = 0.3;
+				// 
+				// this.controls.minDistance = 63 * 1.1;
+				// this.controls.maxDistance = 63 * 200;
+				// 
+				// this.controls.keys = [ 65, 83, 68 ]; // [ rotateKey, zoomKey, panKey ]
 
 				dirLight = new THREE.DirectionalLight( 0xFFFFFF );
 				dirLight.position.set( -1, 0, 1 ).normalize();
@@ -504,6 +631,7 @@
 				
 				var obj = this;
 				window.addEventListener( 'resize', function(){obj.onWindowResize()}, false );
+				window.addEventListener( 'mousemove', function(e){obj.onDocumentMouseMove(e)}, false );
 				
 				// run main loop
 				this.animate();
@@ -522,11 +650,16 @@
 				this.camera.aspect = this.width / this.height;
 				this.camera.updateProjectionMatrix();
 
-				this.controls.screen.width = this.width;
-				this.controls.screen.height = this.height;
+				//this.controls.screen.width = this.width;
+				//this.controls.screen.height = this.height;
 
 				this.camera.radius = ( this.width + this.height ) / 4;
 			};
+			
+			Game.prototype.onDocumentMouseMove = function( event ) {
+				this.mouseX = event.clientX - this.windowHalfX;
+				this.mouseY = event.clientY - this.windowHalfY;
+			}
 			
 			Game.prototype.animate = function() {
 				
@@ -569,9 +702,16 @@
 				
 			}
 			
+			Game.prototype.updateCamera = function() {
+				this.camera.position.z += ( + this.mouseX - 2000 - this.camera.position.z ) * .05;
+				this.camera.position.x += ( - this.mouseY - 4000 - this.camera.position.x ) * .05;
+				this.camera.lookAt(this.originVector);
+			}
+			
 			Game.prototype.render = function() {
 				
-				this.controls.update();
+				//this.controls.update();
+				this.updateCamera();				
 
 				this.renderer.clear();
 				this.renderer.render( this.scene, this.camera );
