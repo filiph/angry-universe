@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="en">
+<html lang="cs">
 	<head>
-		<title>three.js webgl - angry-universe - filiph</title>
+		<title>Nehostinný vesmír!</title>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 		<style>
@@ -15,34 +15,43 @@
 
 				font-family: Monospace;
 				font-size: 13px;
-				text-align: center;
+				text-align: left;
 			}
 
 			#info {
 				position: absolute;
-				top: 0px;
-				width: 100%;
+				top: 0px; left: 20%;
+				width: 60%;
 				padding: 5px;
 				z-index: 100;
+				background: rgba(0,0,0,0.5); 
+			}
+
+			#score {
+				color: red;
+				font-weight: bold;
 			}
 
 			a { color: green; }
-			b { color: green; }
+			strong { color: red; }
 		</style>
 
-		<script src="../three.js/build/Three.js"></script>
+		<script src="http://mrdoob.github.com/three.js/build/Three.js"></script>
 
-		<script src="../three.js/examples/js/Detector.js"></script>
-		<script src="../three.js/examples/js/RequestAnimationFrame.js"></script>
-		<script src="../three.js/examples/js/Stats.js"></script>
+		<script src="http://mrdoob.github.com/three.js/examples/js/Detector.js"></script>
+		<script src="http://mrdoob.github.com/three.js/examples/js/RequestAnimationFrame.js"></script>
+		<script src="http://mrdoob.github.com/three.js/examples/js/Stats.js"></script>
 
 	</head>
 
 	<body>
 
 		<div id="info">
-			<a href="http://github.com/mrdoob/three.js" target="_blank">three.js</a> - earth [trackball camera]<br/><br/>
-			<span id="console">Nothing yet...</span>
+			<p>
+				Toto je <strong>nehostinný vesmír</strong>. Čti <a href="http://runtime.cz">readme.txt</a>.<br>
+				<span id="instructions">V této hře jsi vesmír. Miř kometu pomocí &larr;, &rarr;, &uarr; a &darr;. Mezerníkem ji vypusť.</span><br/>
+				Score: <span id="score">0</span>
+			</p>
 		</div>
 
 		<script>
@@ -52,6 +61,16 @@
 				dom : document.getElementById("console"),
 				log : function(msg) {this.dom.innerHTML = msg}
 			};
+			
+			// infobox
+			g_info = {
+				instructionDom : document.getElementById("instructions"),
+				updateInstructions : function(msg) {this.instructionDom.innerHTML = msg},
+				scoreDom : document.getElementById("score"),
+				updateScore : function(score) {this.scoreDom.innerText = Math.floor(score)},
+				validateScore : function() {this.scoreDom.style.color = "green"},
+				invalidateScore : function() {this.scoreDom.style.color = "red"}
+			}
 
 			// start onload
 			g_game = null;
@@ -64,10 +83,8 @@
 				g_game.startMatch();
 			}
 
-			// game setup
-			
-			// mass in kg, distance in thousands of km
-			
+			// Global level setups
+			// textures from http://maps.jpl.nasa.gov/
 			var g_levelSetups = {
 				1: {
 					"celestialBodies": {
@@ -76,20 +93,31 @@
 							primitive: "Sphere", material: "MeshDepthMaterial",
 							mass: 1.9891e+3 //30
 							},
+						"venus" : { 
+							name: "Venus", radius: 40, rotationSpeed: 2, orbitAround: "Sun", orbitRadius: 400, orbitSpeed: 0.2, angle: Math.PI, tilt: 1.0,
+							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "images/ven0aaa2.jpeg",
+							mass: 1e+2, //24
+							},
 						"earth" : { 
 							name: "Earth", radius: 63, rotationSpeed: 0.5, orbitAround: "Sun", orbitRadius: 1000, orbitSpeed: 0.1, angle: 0, tilt: 0.41,
-							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "textures/planets/earth_atmos_2048.jpg",
-							mass: 5.9736e+2 //24
+							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "images/earth_atmos_2048.jpg",
+							mass: 5.9736e+2, //24
+							playerTarget: true
 							}, 
 						"earthMoon" : {
 							name: "EarthMoon", radius: 25, rotationSpeed: -Math.PI / 4, orbitAround: "Earth", orbitRadius: 200, orbitSpeed: 1, angle: 0, tilt: 0,
-							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "textures/planets/moon_1024.jpg",
+							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "images/moon_1024.jpg",
 							mass: 7.349e+1 //22
-							}
+							},
+						"neptune" : { 
+							name: "Neptune", radius: 80, rotationSpeed: 0.3, orbitAround: "Sun", orbitRadius: 1500, orbitSpeed: 0.05, angle: Math.PI*1.7, tilt: 0,
+							primitive: "Sphere", material: "MeshPhongMaterial", texturePath: "images/nep0fds1.jpeg",
+							mass: 9e+2 //24
+							},
 					},
 					"rigidBodies" : {
 						"comet" : {
-							name: "Comet", radius: 5, x: -500, z: -1000, vx: 200, vz: 0,
+							name: "Comet", radius: 5, x: -1000, z: -2000, vx: 200, vz: 0,
 							primitive: "Sphere", material: "MeshDepthMaterial",
 							mass: 1e+1,
 							alive: false, playerControlled: true
@@ -98,6 +126,7 @@
 				}
 			}
 			
+			// Global physics constants
 			var g_physics = {
 				gravitationalConstant: 6.67384, //6.67384e-11,
 				distanceBulgarianConstant: 1e-4,
@@ -110,16 +139,8 @@
 			
 			// objects
 
+			// Representation of the object in scene
 			function WebGLObject(settings) {
-				
-				/*
-					settings.
-						primitive = Sphere, Cube, ...
-						texturePath
-						cloudsPath
-						normalPath
-						specularPath
-				*/
 				
 				if (settings["material"] == "MeshDepthMaterial") {
 					var material = new THREE.MeshDepthMaterial();//new THREE.MeshNormalMaterial( { shading: THREE.SmoothShading } );
@@ -141,65 +162,10 @@
 					this.mesh = new THREE.Mesh( geometry, material );
 					g_game.scene.add( this.mesh );
 				}
-				
-			
-				/*
-				var planetTexture = THREE.ImageUtils.loadTexture( "textures/planets/earth_atmos_2048.jpg" ),
-				cloudsTexture     = THREE.ImageUtils.loadTexture( "textures/planets/earth_clouds_1024.png" ),
-				normalTexture     = THREE.ImageUtils.loadTexture( "textures/planets/earth_normal_2048.jpg" ),
-				specularTexture   = THREE.ImageUtils.loadTexture( "textures/planets/earth_specular_2048.jpg" ),
-				moonTexture       = THREE.ImageUtils.loadTexture( "textures/planets/moon_1024.jpg" );
-
-				var shader = THREE.ShaderUtils.lib[ "normal" ],
-				uniforms = THREE.UniformsUtils.clone( shader.uniforms );
-
-				uniforms[ "tNormal" ].texture = normalTexture;
-				uniforms[ "uNormalScale" ].value = 0.85;
-
-				uniforms[ "tDiffuse" ].texture = planetTexture;
-				uniforms[ "tSpecular" ].texture = specularTexture;
-
-				uniforms[ "enableAO" ].value = false;
-				uniforms[ "enableDiffuse" ].value = true;
-				uniforms[ "enableSpecular" ].value = true;
-
-				uniforms[ "uDiffuseColor" ].value.setHex( 0xffffff );
-				uniforms[ "uSpecularColor" ].value.setHex( 0x333333 );
-				uniforms[ "uAmbientColor" ].value.setHex( 0x000000 );
-
-				uniforms[ "uShininess" ].value = 15;
-
-				var materialNormalMap = new THREE.ShaderMaterial({
-					fragmentShader: shader.fragmentShader,
-					vertexShader: shader.vertexShader,
-					uniforms: uniforms,
-					lights: true
-				});
-				
-				
-				// planet
-
-				var geometry = new THREE.SphereGeometry( radius, 100, 50 );
-				geometry.computeTangents();
-
-				mesh = new THREE.Mesh( geometry, materialNormalMap );
-				mesh.rotation.y = 1.3;
-				mesh.rotation.z = tilt;
-				g_game.scene.add( mesh );
-				
-				// clouds
-
-				// var materialClouds = new THREE.MeshLambertMaterial( { color: 0xffffff, map: cloudsTexture, transparent:true } );
-
-				// meshClouds = new THREE.Mesh( geometry, materialClouds );
-				// 				meshClouds.scale.set( cloudsScale, cloudsScale, cloudsScale );
-				// 				meshClouds.rotation.z = tilt;
-				// 				scene.add( meshClouds );
-				*/
 			}
 
+			// CelestialBody orbits around other celestial bodies in predefiner radii, is *not* affected by physics
 			function CelestialBody(settings) {
-				// orbits around other celestial bodies, is *not* affected by physics
 				this.settings = settings;
 
 				this.name = settings["name"];
@@ -211,6 +177,12 @@
 				this.orbitRadius = settings["orbitRadius"];
 				this.rotationSpeed = settings["rotationSpeed"];
 				this.orbitAngle = settings["angle"];
+				
+				if ('playerTarget' in settings) {
+					this.playerTarget = settings['playerTarget'];
+				} else {
+					this.playerTarget = false;					
+				}
 				
 				this.webglObject = new WebGLObject(settings);
 				
@@ -237,8 +209,8 @@
 				this.webglObject.mesh.position = this.position;
 			}
 			
+			// RigidBody is affected by physics.
 			function RigidBody(settings) {
-				// is affected by physics
 				this.settings = settings;
 
 				this.name = settings["name"];
@@ -254,6 +226,7 @@
 
 				if ('playerControlled' in settings) {
 					this.playerControlled = settings['playerControlled'];
+					this.score = 0;
 				} else {
 					this.playerControlled = false;					
 				}
@@ -262,10 +235,12 @@
 				this.p_allBodies = null;
 				
 				if ('x' in settings && 'z' in settings) {
-					this.position = new THREE.Vector3(settings['x'], 0, settings['z']);
+					this.startingPosition = new THREE.Vector3(settings['x'], 0, settings['z']);
 				} else {
-					this.position = new THREE.Vector3(500, 0, 500);
+					this.startingPosition = new THREE.Vector3(500, 0, 500);
 				}
+				
+				this.position = this.startingPosition.clone();
 
 				if ('vx' in settings && 'vz' in settings) {
 					this.velocity = new THREE.Vector3(settings['vx'], 0, settings['vz']);
@@ -291,6 +266,13 @@
 				return vectorToCurrent.divideScalar(Math.sqrt(r_squared)).multiplyScalar(a); // normalize then multiply by force
 			}
 			
+			RigidBody.prototype.updateScore = function(accelerationLength, dt) {
+				this.score += accelerationLength * dt - 200 * dt;
+				if (this.score < 0) {
+					this.score = 0;
+				}
+			}
+			
 			RigidBody.prototype.updatePosition = function(dt) {
 				this.acceleration.set(0,0,0);
 				
@@ -298,20 +280,38 @@
 					var other = this.p_allBodies[key];
 					if (this !== other) {
 						this.acceleration.addSelf(this.getGravitationalAccelerationTo(other));
+						if (this.position.clone().subSelf(other.position).length() < this.radius + other.radius) {
+							if (this.playerControlled) {
+								// we crashed
+								this.alive = false; this.webglObject.mesh.visible = false;
+								if (other.playerTarget) {
+									g_info.validateScore();
+									g_info.updateInstructions("<strong>Civilizace zničena!</strong> Doufám, že jsi patřičně hrdý na svou nehostinnost, jako.");
+								} else {
+									g_info.updateInstructions("Narazil jsi hezky, ale do špatného tělesa. Zkus to znovu (stiskni mezerník).");
+								}
+							}
+						}
 					}
 				}
 				
-				if (this.acceleration.length() * dt > g_physics.maxForceInOneStep && dt > g_physics.minDt) {
+				var accelerationLength = this.acceleration.length();
+				
+				if (accelerationLength * dt > g_physics.maxForceInOneStep && dt > g_physics.minDt) {
 					// we're dealing with too strong forces per computation, need to have smaller steps
 					var granularity = 2;
 					var granular_dt = dt / granularity;
-					console.log("Previous dt = " + dt + " | Granular dt = " + granular_dt);
+					//console.log("Previous dt = " + dt + " | Granular dt = " + granular_dt);
 
 					
 					for (var i = 0; i < granularity; i++) {
 						this.updatePosition(granular_dt);
 					}
 				} else {
+					if (this.playerControlled) {
+						this.updateScore(accelerationLength, dt);
+					}
+					
 					var starting_velocity = this.velocity.clone();
 					
 					// a = dv/dt --> v = u + a*dt
@@ -319,11 +319,7 @@
 
 					// dx = (u+v)/2 * dt
 					this.position.addSelf(starting_velocity.addSelf(this.velocity).multiplyScalar(dt/2));
-					//this.position.addSelf(this.velocity.multiplyScalar(dt));
-					
-					g_console.log("Acceleration: " + this.acceleration.x + " | " + this.acceleration.z + "<br>" +
-									"Velocity: " + this.velocity.x + " | " + this.velocity.z);
-					
+
 					this.webglObject.mesh.position = this.position;
 				}				
 			}
@@ -333,6 +329,8 @@
 				this.levelNumber = levelNumber;
 				this.levelSetup = g_levelSetups[this.levelNumber];
 				
+				this.score = 0;
+				
 				this.celestialBodies = [];
 				
 				// current level objects
@@ -340,11 +338,20 @@
 					var bodySettings = this.levelSetup["celestialBodies"][celestialBodyName];
 					var newBody = new CelestialBody(bodySettings);
 					
+					// get object of the celestial body this one is orbiting around
 					if ("orbitAround" in bodySettings) {
 						for (i in this.celestialBodies) {
 							if (this.celestialBodies[i].name == bodySettings["orbitAround"]) {
 								newBody.orbitAround = this.celestialBodies[i];
 							}
+						}
+					}
+					
+					// find out if this is the target
+					if ("playerTarget" in bodySettings) {
+						if (bodySettings['playerTarget']) {
+							newBody.playerTarget = true;
+							this.playerTargetBody = newBody;
 						}
 					}
 					
@@ -371,11 +378,11 @@
 				}
 				
 				this.interactiveMode = true;
-				this.startingPoint = this.playerControlledBody.position;
+				this.startingPoint = this.playerControlledBody.position.clone();
 				this.startingAngle = - Math.PI / 4;
 				this.startingForce = 1.0;
 				this.arrow = new Arrow();
-				this.arrow.line.position = this.startingPoint;
+				this.arrow.line.position = this.startingPoint.clone();
 				
 				var obj = this;
 				window.addEventListener( 'keydown', function(e){obj.onKeyDown(e)}, false );
@@ -406,19 +413,38 @@
 				this.line.scale.x = force;
 			}
 			
-			Level.prototype.shoot = function() {
-				this.interactiveMode = false;
-
-				this.playerControlledBody.alive = true;
-				this.playerControlledBody.webglObject.mesh.rotation.y = this.arrow.line.rotation.y;
+			Level.prototype.reset = function() {
+				this.interactiveMode = true;
+				this.playerControlledBody.position = this.playerControlledBody.startingPosition.clone();
+				this.playerControlledBody.updatePosition(0);
+				this.playerControlledBody.velocity.set(0, 0, 0);
+				this.playerControlledBody.alive = false;
 				this.playerControlledBody.webglObject.mesh.visible = true;
-				
-				var trueStartingForce = g_physics.minStartingForce + (g_physics.maxStartingForce - g_physics.minStartingForce) * (this.startingForce - 0.5);
-				
-				this.playerControlledBody.velocity.x = Math.cos(this.startingAngle) * trueStartingForce;
-				this.playerControlledBody.velocity.z = - Math.sin(this.startingAngle) * trueStartingForce;
+				this.playerControlledBody.score = 0;
+				this.arrow.line.visible = true;
+				g_info.invalidateScore();
+				g_info.updateScore(0);
+				g_info.updateInstructions("V této hře jsi vesmír. Miř kometu pomocí &larr;, &rarr;, &uarr; a &darr;. Mezerníkem ji vypusť.");
+			}
+			
+			Level.prototype.shoot = function() {
+				if (!this.interactiveMode) {
+					this.reset();
+				} else {
+					this.interactiveMode = false;
 
-				this.arrow.line.visible = false;
+					this.playerControlledBody.alive = true;
+					this.playerControlledBody.webglObject.mesh.rotation.y = this.arrow.line.rotation.y;
+					this.playerControlledBody.webglObject.mesh.visible = true;
+
+					var trueStartingForce = g_physics.minStartingForce + (g_physics.maxStartingForce - g_physics.minStartingForce) * (this.startingForce - 0.5);
+
+					this.playerControlledBody.velocity.x = Math.cos(this.startingAngle) * trueStartingForce;
+					this.playerControlledBody.velocity.z = - Math.sin(this.startingAngle) * trueStartingForce;
+
+					this.arrow.line.visible = false;
+					g_info.updateInstructions("Sleduj score. Čím zajímavější trasa komety, tím lépe. Mezerníkem to můžeš zkusit znovu.");
+				}
 			}
 			
 			Level.prototype.onKeyDown = function ( event ) {
@@ -461,6 +487,8 @@
 				if (this.interactiveMode) {
 					this.arrow.setRotation(this.startingAngle);
 					this.arrow.setForce(this.startingForce);
+				} else {
+					g_info.updateScore(this.playerControlledBody.score);
 				}
 			}
 		
@@ -537,29 +565,6 @@
 				this.camera.position.x = - 60 * 50;
 				this.camera.lookAt(new THREE.Vector3(0,0,0));
 
-				this.controls = {
-									object : this.camera,
-									target : new THREE.Vector3(0,0,0),
-									update : function() {this.object.position.x -= 1; this.object.lookAt(this.target)}
-								};
-
-				// this.controls = new THREE.TrackballControls( this.camera, this.renderer.domElement );
-				// 
-				// this.controls.rotateSpeed = 1.0;
-				// this.controls.zoomSpeed = 1.2;
-				// this.controls.panSpeed = 0.2;
-				// 
-				// this.controls.noZoom = false;
-				// this.controls.noPan = true;
-				// 
-				// this.controls.staticMoving = false;
-				// this.controls.dynamicDampingFactor = 0.3;
-				// 
-				// this.controls.minDistance = 63 * 1.1;
-				// this.controls.maxDistance = 63 * 200;
-				// 
-				// this.controls.keys = [ 65, 83, 68 ]; // [ rotateKey, zoomKey, panKey ]
-
 				dirLight = new THREE.DirectionalLight( 0xFFFFFF );
 				dirLight.position.set( -1, 0, 1 ).normalize();
 				this.scene.add( dirLight );
@@ -620,7 +625,6 @@
 					stars.updateMatrix();
 
 					this.scene.add( stars );
-
 				}
 				
 				this.stats = new Stats();
@@ -650,9 +654,6 @@
 				this.camera.aspect = this.width / this.height;
 				this.camera.updateProjectionMatrix();
 
-				//this.controls.screen.width = this.width;
-				//this.controls.screen.height = this.height;
-
 				this.camera.radius = ( this.width + this.height ) / 4;
 			};
 			
@@ -676,183 +677,52 @@
 					this.match.level.animate(dt);
 				}
 				
-				
-				/*
-				// comet animation
-				for (var p = 0; p < comet.particleCount; p++) {
-					var particle = comet.particles.vertices[p];
-					if (particle.position.z < - Math.random() * comet.tailLength * 4) {
-						particle.position.set( 	Math.cos(particle.angle),
-												Math.sin(particle.angle),
-												- Math.random() * comet.tailLength / 10
-												);
-					}
-					particle.position.addSelf( new THREE.Vector3(
-													5 * Math.cos(particle.angle)/ (particle.position.z - 1),
-													5 * Math.sin(particle.angle)/ (particle.position.z - 1),
-													- Math.abs(particle.position.z)/50 - 1
-													) );
-				}
-				comet.particleSystem.geometry.__dirtyVertices = true;
-				*/
-				
-				
 				this.render();
 				this.stats.update();
 				
 			}
 			
+			Game.prototype.getCameraLookAtTarget = function(playerControlled, target) {
+				var vectorToTarget = target.clone().subSelf(playerControlled);
+				var distanceToTarget = vectorToTarget.length();
+				var lookAtOffset = 1000;
+				var distanceFromPlayerControlled = null;
+				
+				if (distanceToTarget < lookAtOffset) {
+					return target;
+				} else if (distanceToTarget < lookAtOffset * 2) {
+					var leftoverDistanceRatio = (distanceToTarget - lookAtOffset) / lookAtOffset;
+					distanceFromPlayerControlled = distanceToTarget - lookAtOffset * Math.pow(-leftoverDistanceRatio, 2);
+				} else {
+					distanceFromPlayerControlled = lookAtOffset;
+				}
+				
+				var lookAtTarget = playerControlled.clone();
+				lookAtTarget.addSelf(vectorToTarget.divideScalar(distanceToTarget).multiplyScalar(distanceFromPlayerControlled));
+				return lookAtTarget;
+			}
+			
 			Game.prototype.updateCamera = function() {
 				this.camera.position.z += ( + this.mouseX - 2000 - this.camera.position.z ) * .05;
 				this.camera.position.x += ( - this.mouseY - 4000 - this.camera.position.x ) * .05;
-				this.camera.lookAt(this.originVector);
+				
+				if (this.match !== undefined && this.match.level !== null) {
+					if (this.match.level.playerControlledBody !== undefined && this.match.level.playerTargetBody != undefined) {
+						this.camera.lookAt(this.getCameraLookAtTarget(
+													this.match.level.playerControlledBody.position,
+													this.match.level.playerTargetBody.position	
+											));
+					}
+					
+				}
 			}
 			
 			Game.prototype.render = function() {
-				
-				//this.controls.update();
 				this.updateCamera();				
 
 				this.renderer.clear();
 				this.renderer.render( this.scene, this.camera );
 			}
-
-
-
-
-
-
-
-
-
-			function init() {
-		
-
-				/*
-
-
-
-				
-				*/
-
-				// comet
-				/*
-				comet = {};
-				comet.tailLength = 500;
-				comet.particleCount = 200;
-				comet.particles = new THREE.Geometry();
-				comet.pMaterial = new THREE.ParticleBasicMaterial({
-					color: 0xFFFFFF,
-					size: 100,
-					map: THREE.ImageUtils.loadTexture(
-					    "images/particle.png"
-					),
-					blending: THREE.AdditiveBlending,
-					transparent: true,
-				});
-
-				// now create the individual particles
-				for (var p = 0; p < comet.particleCount; p++) {
-					
-					var pAngle = Math.random() * 2 * Math.PI;
-					// create a particle with random
-					// position values, -250 -> 250
-					var pX = Math.cos( pAngle),
-					pY = Math.sin( pAngle),
-					pZ = - Math.random() * comet.tailLength / 10,
-					particle = new THREE.Vertex(
-						new THREE.Vector3(pX, pY, pZ)
-					);
-					
-					particle.angle = pAngle;
-
-					// add it to the geometry
-					comet.particles.vertices.push(particle);
-				}
-
-				// create the particle system
-				comet.particleSystem = new THREE.ParticleSystem(
-					comet.particles,
-					comet.pMaterial);
-				comet.particleSystem.position = new THREE.Vector3( - 250, 0, -500);
-				//var lookAtMatrix = new THREE.Matrix4();
-				//lookAtMatrix.lookAt( comet.particleSystem.position, originVector, new THREE.Vector3(-1, 1, -1).normalize() );
-				//comet.particleSystem.rotation.setRotationFromMatrix( lookAtMatrix );
-				comet.particleSystem.lookAt(originVector);
-				// add it to the scene
-				scene.add(comet.particleSystem);
-				*/
-
-				
-
-				
-
-			};
-
-
-			/*
-			function animate() {
-
-				requestAnimationFrame( animate );
-
-				// celestial bodies update
-				var t = new Date().getTime(),
-				dt = Math.min(( t - time ) / 1000, 0.033); // min 30 fps
-				time = t;
-
-				for (currentBodyKey in celestialBodies) {
-					current = celestialBodies[currentBodyKey];
-					
-					current.mesh.rotation.y += current.rotationSpeed * dt;
-					
-					var orbitX = 0, orbitZ = 0;
-					if (current.orbitAround != "Sun") {
-						orbitX = celestialBodies[current.orbitAround].mesh.position.x;
-						orbitZ = celestialBodies[current.orbitAround].mesh.position.z;
-					}
-					
-					current.angle += dt * current.orbitSpeed;
-					
-					current.mesh.position = new THREE.Vector3(
-						Math.cos( current.angle ) * current.orbitRadius + orbitX,
-						0,
-						Math.sin( current.angle ) * current.orbitRadius + orbitZ
-					);
-				}
-
-
-				// comet animation
-				for (var p = 0; p < comet.particleCount; p++) {
-					var particle = comet.particles.vertices[p];
-					if (particle.position.z < - Math.random() * comet.tailLength * 4) {
-						particle.position.set( 	Math.cos(particle.angle),
-												Math.sin(particle.angle),
-												- Math.random() * comet.tailLength / 10
-												);
-					}
-					particle.position.addSelf( new THREE.Vector3(
-													5 * Math.cos(particle.angle)/ (particle.position.z - 1),
-													5 * Math.sin(particle.angle)/ (particle.position.z - 1),
-													- Math.abs(particle.position.z)/50 - 1
-													) );
-				}
-				comet.particleSystem.geometry.__dirtyVertices = true;
-				
-				render();
-				stats.update();
-
-			};
-
-			function render() {
-
-
-
-				controls.update();
-
-				renderer.clear();
-				renderer.render( scene, camera );
-
-			};*/
 
 		</script>
 	</body>
