@@ -48,7 +48,7 @@
 
 		<div id="info">
 			<p>
-				Toto je <strong>nehostinný vesmír</strong>. Cílem je zničit Zemi. Čti <a href="http://runtime.cz">readme.txt</a>.<br>
+				Toto je <strong>nehostinný vesmír</strong> v0.1. Cílem je zničit Zemi. Čti <a href="http://runtime.cz">readme.txt</a>.<br>
 				<span id="instructions">V této hře jsi vesmír. Miř kometu pomocí &larr;, &rarr;, &uarr; a &darr;. Mezerníkem ji vypusť.</span><br/>
 				Score: <span id="score">0</span>
 			</p>
@@ -286,9 +286,9 @@
 								this.alive = false; this.webglObject.mesh.visible = false;
 								if (other.playerTarget) {
 									g_info.validateScore();
-									g_info.updateInstructions("<strong>Civilizace zničena!</strong> Doufám, že jsi patřičně hrdý na svou nehostinnost, jako.");
+									g_info.updateInstructions("<strong>Civilizace zničena!</strong> Doufám, že jsi patřičně hrdý na svou nehostinnost, jako!");
 								} else {
-									g_info.updateInstructions("Narazil jsi hezky, ale do špatného tělesa. Zkus to znovu (stiskni mezerník).");
+									g_info.updateInstructions("Narazil jsi hezky, ale do <strong>špatného tělesa</strong>. Tvým cílem je Země. Resetuj mezerníkem.");
 								}
 							}
 						}
